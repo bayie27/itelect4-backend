@@ -1,11 +1,8 @@
 import "dotenv/config";
-import mongoose from "mongoose";
 import { app } from "./app.js";
-import { getMongoUri } from "./config/mongoUri.js";
+import { connectDatabase } from "./config/db.js";
 
 async function startServer(): Promise<void> {
-  const mongoUri = getMongoUri();
-
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret || jwtSecret.length < 32) {
     throw new Error("JWT_SECRET must contain at least 32 characters in the local .env file.");
@@ -18,7 +15,7 @@ async function startServer(): Promise<void> {
   }
 
   try {
-    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 5000 });
+    await connectDatabase();
   } catch {
     throw new Error("MongoDB connection failed. Check the Atlas URI, database user, and network access list.");
   }
