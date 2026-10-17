@@ -14,6 +14,7 @@ export interface IncidentRecord {
   reportedAt: Date;
   commanderId: Types.ObjectId;
   createdById: Types.ObjectId;
+  dependencyRevision: number;
   containedAt?: Date;
   resolvedAt?: Date;
   createdAt?: Date;
@@ -32,6 +33,7 @@ const incidentSchema = new Schema<IncidentRecord>(
     reportedAt: { type: Date, default: Date.now, required: true },
     commanderId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     createdById: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    dependencyRevision: { type: Number, default: 0, min: 0, select: false },
     containedAt: { type: Date },
     resolvedAt: { type: Date },
   },

@@ -3,6 +3,7 @@ import mongoose, { Types } from "mongoose";
 import { authenticate } from "../middleware/auth.js";
 import { requireCommander } from "../middleware/requireCommander.js";
 import { IncidentModel, toPublicIncident } from "../models/Incident.js";
+import { lockOwnedIncidentForDependencyMutation } from "../services/incidentDependencyMutation.js";
 import { IncidentSeverity, IncidentStatus } from "../types/index.js";
 
 export const incidentRoutes = Router();
@@ -143,18 +144,6 @@ incidentRoutes.delete("/:incidentId", requireCommander, async (req, res) => {
     return;
   }
 
-  const query = { _id: incidentId, createdById: req.userId };
-  const incident = await IncidentModel.findOne(query);
-  if (!incident) {
-    res.status(404).json({ message: "Incident not found." });
-    return;
-  }
-
-  if (incident.status !== IncidentStatus.DETECTED) {
-    res.status(409).json({ message: "Only detected incidents can be deleted." });
-    return;
-  }
-
   const database = mongoose.connection.db;
   if (!database) {
     throw new Error("Database connection is not available.");
@@ -162,12 +151,67 @@ incidentRoutes.delete("/:incidentId", requireCommander, async (req, res) => {
 
   const incidentObjectId = new Types.ObjectId(incidentId);
   const dependencyQuery = { incidentId: { $in: [incidentObjectId, incidentId] } };
-  const [action, evidence] = await Promise.all([
-    database.collection("responseactions").findOne(dependencyQuery),
-    database.collection("evidences").findOne(dependencyQuery),
-  ]);
+  const session = await mongoose.startSession();
+  const transactionResult: {
+    result: "deleted" | "not-found" | "wrong-status" | "dependencies" | "changed";
+  } = { result: "changed" };
 
-  if (action || evidence) {
+  try {
+    await session.withTransaction(async () => {
+      transactionResult.result = "changed";
+
+      const incident = await lockOwnedIncidentForDependencyMutation(
+        session,
+        incidentId,
+        req.userId!,
+        IncidentStatus.DETECTED,
+      );
+
+      if (!incident) {
+        const existingIncident = await IncidentModel.findOne({
+          _id: incidentId,
+          createdById: req.userId,
+        }).session(session);
+        transactionResult.result = !existingIncident
+          ? "not-found"
+          : existingIncident.status !== IncidentStatus.DETECTED
+            ? "wrong-status"
+            : "changed";
+        return;
+      }
+
+      const action = await database.collection("responseactions").findOne(dependencyQuery, { session });
+      const evidence = await database.collection("evidences").findOne(dependencyQuery, { session });
+      if (action || evidence) {
+        transactionResult.result = "dependencies";
+        return;
+      }
+
+      const deleted = await IncidentModel.findOneAndDelete(
+        {
+          _id: incidentId,
+          createdById: req.userId,
+          status: IncidentStatus.DETECTED,
+        },
+        { session },
+      );
+      transactionResult.result = deleted ? "deleted" : "changed";
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (transactionResult.result === "not-found") {
+    res.status(404).json({ message: "Incident not found." });
+    return;
+  }
+
+  if (transactionResult.result === "wrong-status") {
+    res.status(409).json({ message: "Only detected incidents can be deleted." });
+    return;
+  }
+
+  if (transactionResult.result === "dependencies") {
     res.status(409).json({
       message: "Incidents with response actions or evidence cannot be deleted.",
       code: "INCIDENT_HAS_DEPENDENCIES",
@@ -175,12 +219,7 @@ incidentRoutes.delete("/:incidentId", requireCommander, async (req, res) => {
     return;
   }
 
-  const deleted = await IncidentModel.findOneAndDelete({
-    ...query,
-    status: IncidentStatus.DETECTED,
-  });
-
-  if (!deleted) {
+  if (transactionResult.result !== "deleted") {
     res.status(409).json({ message: "Incident changed while deletion was being checked; reload and retry." });
     return;
   }

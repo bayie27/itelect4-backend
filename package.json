@@ -11,6 +11,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "seed": "tsx src/seed.ts",
     "typecheck": "tsc --noEmit"
   },
   "repository": {
