@@ -5,8 +5,10 @@ import express from "express";
 import mongoose from "mongoose";
 import { ensureDatabaseConnection } from "./middleware/ensureDatabaseConnection.js";
 import { authRoutes } from "./routes/authRoutes.js";
+import { aiRoutes } from "./routes/aiRoutes.js";
 import { evidenceRoutes } from "./routes/evidenceRoutes.js";
 import { incidentRoutes } from "./routes/incidentRoutes.js";
+import { reportRoutes } from "./routes/reportRoutes.js";
 import { responseActionRoutes } from "./routes/responseActionRoutes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 
@@ -33,9 +35,11 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/ai", aiRoutes);
 app.use("/api", responseActionRoutes);
 app.use("/api", evidenceRoutes);
 app.use("/api/incidents", incidentRoutes);
+app.use("/api", reportRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
