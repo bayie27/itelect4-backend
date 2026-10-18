@@ -79,3 +79,8 @@ The student configures the external accounts and deployment secrets. Keep secret
 4. In the frontend Vercel project, set `VITE_API_URL` to the backend origin without `/api` or a trailing slash. After the frontend has a deployment URL, set this backend's `CORS_ORIGIN` to that exact frontend origin and redeploy this backend.
 
 Register a fictional commander in the frontend before running the seed command from this backend checkout. The local `.env` used for the command must point to the same Atlas database as the deployment. The required submission contains the backend GitHub repository, frontend GitHub repository, backend live URL, and frontend live URL.
+
+## Live deployments
+
+- **Frontend:** [itelect4-project-roan.vercel.app](https://itelect4-project-roan.vercel.app)
+- **Backend:** [itelect4-backend-roan.vercel.app](https://itelect4-backend-roan.vercel.app)
