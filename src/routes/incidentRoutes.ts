@@ -2,9 +2,11 @@ import { Router } from "express";
 import mongoose, { Types } from "mongoose";
 import { authenticate } from "../middleware/auth.js";
 import { requireCommander } from "../middleware/requireCommander.js";
-import { IncidentModel, toPublicIncident } from "../models/Incident.js";
+import { canTransitionIncident } from "../domain/lifecycle.js";
+import { IncidentModel, toPublicIncident, type IncidentDocument } from "../models/Incident.js";
+import { ResponseActionModel } from "../models/ResponseAction.js";
 import { lockOwnedIncidentForDependencyMutation } from "../services/incidentDependencyMutation.js";
-import { IncidentSeverity, IncidentStatus } from "../types/index.js";
+import { IncidentSeverity, IncidentStatus, ResponseActionStatus } from "../types/index.js";
 
 export const incidentRoutes = Router();
 incidentRoutes.use(authenticate);
@@ -33,6 +35,10 @@ function hasOnlyKeys(body: Record<string, unknown>, allowed: readonly string[]):
 
 function canUpdateField(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isIncidentStatus(value: unknown): value is IncidentStatus {
+  return typeof value === "string" && Object.values(IncidentStatus).includes(value as IncidentStatus);
 }
 
 incidentRoutes.get("/", async (req, res) => {
@@ -88,6 +94,133 @@ incidentRoutes.post("/", requireCommander, async (req, res) => {
   });
 
   res.status(201).json(toPublicIncident(incident));
+});
+
+incidentRoutes.patch("/:incidentId/status", requireCommander, async (req, res) => {
+  const incidentId = getRouteParam(req.params.incidentId);
+  if (!incidentId || !isValidIncidentId(incidentId)) {
+    res.status(400).json({ message: "Incident id must be a valid MongoDB ObjectId." });
+    return;
+  }
+
+  const body = asObject(req.body);
+  if (!body || !hasOnlyKeys(body, ["status"]) || Object.keys(body).length !== 1 || !isIncidentStatus(body.status)) {
+    res.status(400).json({ message: "Provide one valid incident status." });
+    return;
+  }
+
+  const ownerId = req.userId;
+  if (!ownerId) {
+    res.status(401).json({ message: "Authentication required." });
+    return;
+  }
+
+  const nextStatus = body.status;
+  const session = await mongoose.startSession();
+  const transactionResult: {
+    incident: IncidentDocument | undefined;
+    result: "updated" | "not-found" | "invalid-transition" | "open-actions" | "changed";
+  } = { incident: undefined, result: "changed" };
+
+  try {
+    await session.withTransaction(async () => {
+      transactionResult.incident = undefined;
+      transactionResult.result = "changed";
+
+      const candidate = await IncidentModel.findOne({
+        _id: incidentId,
+        createdById: ownerId,
+      }).session(session);
+      if (!candidate) {
+        transactionResult.result = "not-found";
+        return;
+      }
+
+      if (!canTransitionIncident(candidate.status, nextStatus)) {
+        transactionResult.result = "invalid-transition";
+        return;
+      }
+
+      const incident = await lockOwnedIncidentForDependencyMutation(
+        session,
+        incidentId,
+        ownerId,
+        candidate.status,
+      );
+      if (!incident) {
+        return;
+      }
+
+      if (nextStatus === IncidentStatus.RESOLVED) {
+        const openAction = await ResponseActionModel.findOne({
+          incidentId: incident._id,
+          status: { $nin: [ResponseActionStatus.COMPLETED, ResponseActionStatus.REJECTED] },
+        }).session(session);
+        if (openAction) {
+          transactionResult.result = "open-actions";
+          return;
+        }
+      }
+
+      const set: Record<string, unknown> = { status: nextStatus };
+      const update: {
+        $set: Record<string, unknown>;
+        $unset?: Record<string, string>;
+      } = { $set: set };
+
+      if (nextStatus === IncidentStatus.CONTAINED) {
+        set.containedAt = new Date();
+      }
+      if (nextStatus === IncidentStatus.RESOLVED) {
+        set.resolvedAt = new Date();
+      }
+      if (
+        incident.status === IncidentStatus.CONTAINED &&
+        nextStatus === IncidentStatus.INVESTIGATING
+      ) {
+        update.$unset = { containedAt: "" };
+      }
+
+      const updatedIncident = await IncidentModel.findOneAndUpdate(
+        {
+          _id: incident._id,
+          createdById: ownerId,
+          status: incident.status,
+        },
+        update,
+        { session, returnDocument: "after", runValidators: true },
+      );
+      transactionResult.incident = updatedIncident ?? undefined;
+      transactionResult.result = updatedIncident ? "updated" : "changed";
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (transactionResult.result === "not-found") {
+    res.status(404).json({ message: "Incident not found." });
+    return;
+  }
+  if (transactionResult.result === "invalid-transition") {
+    res.status(409).json({
+      message: "Incident status transition is not allowed.",
+      code: "INVALID_INCIDENT_TRANSITION",
+    });
+    return;
+  }
+  if (transactionResult.result === "open-actions") {
+    res.status(409).json({
+      message: "Resolve or reject all response actions before resolving this incident.",
+      code: "INCIDENT_HAS_OPEN_ACTIONS",
+    });
+    return;
+  }
+  if (transactionResult.result !== "updated" || !transactionResult.incident) {
+    res.status(409).json({ message: "Incident changed while its status was being updated; reload and retry." });
+    return;
+  }
+
+  res.json(toPublicIncident(transactionResult.incident));
 });
 
 incidentRoutes.patch("/:incidentId", requireCommander, async (req, res) => {

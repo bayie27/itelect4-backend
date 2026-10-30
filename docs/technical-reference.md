@@ -160,6 +160,8 @@ PATCH /api/actions/:actionId/status
 
 Creation is available to both roles. Approval, rejection, and assignment are commander-only. Start and completion require the assignee or a commander.
 
+For the 10-minute demo implementation, `PATCH /api/actions/:actionId/status` supports only a commander rejecting an action that is still `PROPOSED`. Approval, assignment, start, and completion remain outside this demo slice.
+
 ### Evidence
 
 ```http
@@ -181,7 +183,7 @@ GET  /api/reports/:reportId
 
 `POST /api/ai` accepts an incident identifier, verifies commander access and resolution eligibility, generates the report server-side, and saves the next immutable version. It returns the saved `IncidentReport`.
 
-The request body is `{ "incidentId": "<id>", "prompt": "<supplemental fictional incident note>" }`. The Zod request schema trims and validates the note at 20–2,000 characters before any Gemini call. The note is supplemental context, not a database-verified fact. The server derives the main report facts from the creator-owned resolved incident, its revealed evidence, and its response actions. The endpoint requires authentication and commander authorization, and is rate limited to five requests per user per minute. A successful Gemini response must parse as JSON and pass the report schema before an immutable version is saved. Invalid requests return 400, Gemini quota exhaustion returns 429, and provider or schema failures return 502; a failed generation does not change prior reports.
+The request body is `{ "incidentId": "<id>", "prompt": "<supplemental fictional incident note>" }`. The Zod request schema trims and validates the note at 20–2,000 characters before any Gemini call. The note is supplemental context, not a database-verified fact. The server derives the main report facts from the creator-owned resolved incident, its revealed evidence, and its response actions. It queries only evidence with `isRevealed: true` and marks each supplied evidence item as revealed in the Gemini input; the prompt clarifies that pre-reveal wording in an evidence description does not mean the item remains hidden. The endpoint requires authentication and commander authorization, and is rate limited to five requests per user per minute. A successful Gemini response must parse as JSON and pass the report schema before an immutable version is saved. Invalid requests return 400, Gemini quota exhaustion returns 429, and provider or schema failures return 502; a failed generation does not change prior reports.
 
 The report list returns version metadata for a creator-owned incident. The report detail route returns the full serialized content after verifying the same incident ownership boundary.
 
@@ -208,7 +210,7 @@ The report list returns version metadata for a creator-owned incident. The repor
 - Every action for the incident must be `COMPLETED` or `REJECTED`.
 - The server sets `resolvedAt` only after all checks pass.
 
-The reusable rules begin in `src/domain/rules.ts`. The server should call the same domain logic or an equivalent shared package rather than reimplementing transitions in route handlers.
+The frontend transition rules live in `itelect4-project/src/domain/rules.ts`; the backend enforces the same incident map in `itelect4-backend/src/domain/lifecycle.ts`. Keep server lifecycle checks in that domain module rather than embedding transition maps in route handlers.
 
 ## Real-time contract
 

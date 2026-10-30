@@ -15,6 +15,7 @@ async function tryAi(): Promise<void> {
     },
     evidence: [
       {
+        isRevealed: true,
         title: "Simulated OAuth consent alert",
         description: "A fictional alert records an application requesting email and profile scopes.",
         type: "alert",

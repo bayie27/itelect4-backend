@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose, { Types } from "mongoose";
 import { authenticate } from "../middleware/auth.js";
+import { requireCommander } from "../middleware/requireCommander.js";
 import { IncidentModel } from "../models/Incident.js";
 import {
   ResponseActionModel,
@@ -73,7 +74,8 @@ responseActionRoutes.post("/incidents/:incidentId/actions", authenticate, async 
   }
   const priority = body.priority;
 
-  if (!req.userId) {
+  const ownerId = req.userId;
+  if (!ownerId) {
     res.status(401).json({ message: "Authentication required." });
     return;
   }
@@ -92,14 +94,14 @@ responseActionRoutes.post("/incidents/:incidentId/actions", authenticate, async 
       const incident = await lockOwnedIncidentForDependencyMutation(
         session,
         incidentId,
-        req.userId!,
+        ownerId,
         { $ne: IncidentStatus.RESOLVED },
       );
 
       if (!incident) {
         const existingIncident = await IncidentModel.findOne({
           _id: incidentId,
-          createdById: req.userId,
+          createdById: ownerId,
         }).session(session);
         transactionResult.result = !existingIncident
           ? "not-found"
@@ -117,7 +119,7 @@ responseActionRoutes.post("/incidents/:incidentId/actions", authenticate, async 
             description,
             priority,
             status: ResponseActionStatus.PROPOSED,
-            proposedById: new Types.ObjectId(req.userId),
+            proposedById: new Types.ObjectId(ownerId),
           },
         ],
         { session },
@@ -144,4 +146,104 @@ responseActionRoutes.post("/incidents/:incidentId/actions", authenticate, async 
   }
 
   res.status(201).json(toPublicResponseAction(transactionResult.action));
+});
+
+responseActionRoutes.patch("/actions/:actionId/status", authenticate, requireCommander, async (req, res) => {
+  const actionId = getRouteParam(req.params.actionId);
+  if (!actionId || !isValidObjectId(actionId)) {
+    res.status(400).json({ message: "Response action id must be a valid MongoDB ObjectId." });
+    return;
+  }
+
+  const body = asObject(req.body);
+  if (!body || !hasOnlyKeys(body, ["status"]) || Object.keys(body).length !== 1) {
+    res.status(400).json({ message: "Provide only the response action status." });
+    return;
+  }
+  if (body.status !== ResponseActionStatus.REJECTED) {
+    res.status(400).json({ message: "The demo workflow only allows rejecting a proposed response action." });
+    return;
+  }
+
+  const ownerId = req.userId;
+  if (!ownerId) {
+    res.status(401).json({ message: "Authentication required." });
+    return;
+  }
+
+  const session = await mongoose.startSession();
+  const transactionResult: {
+    action: ResponseActionDocument | undefined;
+    result: "updated" | "not-found" | "wrong-status" | "resolved" | "changed";
+  } = { action: undefined, result: "changed" };
+
+  try {
+    await session.withTransaction(async () => {
+      transactionResult.action = undefined;
+      transactionResult.result = "changed";
+
+      const candidateAction = await ResponseActionModel.findOne({ _id: actionId }).session(session);
+      if (!candidateAction) {
+        transactionResult.result = "not-found";
+        return;
+      }
+      if (candidateAction.status !== ResponseActionStatus.PROPOSED) {
+        transactionResult.result = "wrong-status";
+        return;
+      }
+
+      const incidentId = candidateAction.incidentId.toString();
+      const incident = await lockOwnedIncidentForDependencyMutation(
+        session,
+        incidentId,
+        ownerId,
+        { $ne: IncidentStatus.RESOLVED },
+      );
+      if (!incident) {
+        const ownedIncident = await IncidentModel.findOne({
+          _id: incidentId,
+          createdById: ownerId,
+        }).session(session);
+        transactionResult.result = !ownedIncident
+          ? "not-found"
+          : ownedIncident.status === IncidentStatus.RESOLVED
+            ? "resolved"
+            : "changed";
+        return;
+      }
+
+      const action = await ResponseActionModel.findOneAndUpdate(
+        {
+          _id: candidateAction._id,
+          incidentId: incident._id,
+          status: ResponseActionStatus.PROPOSED,
+        },
+        { $set: { status: ResponseActionStatus.REJECTED } },
+        { session, returnDocument: "after", runValidators: true },
+      );
+      transactionResult.action = action ?? undefined;
+      transactionResult.result = action ? "updated" : "changed";
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (transactionResult.result === "not-found") {
+    res.status(404).json({ message: "Response action not found." });
+    return;
+  }
+  if (transactionResult.result === "wrong-status") {
+    res.status(409).json({ message: "Only proposed response actions can be rejected." });
+    return;
+  }
+  if (transactionResult.result === "resolved") {
+    res.status(409).json({ message: "A response action cannot be changed after its incident is resolved." });
+    return;
+  }
+  if (transactionResult.result !== "updated" || !transactionResult.action) {
+    res.status(409).json({ message: "Response action changed while it was being rejected; reload and retry." });
+    return;
+  }
+
+  res.json(toPublicResponseAction(transactionResult.action));
 });

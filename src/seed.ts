@@ -76,7 +76,8 @@ async function seedForCommander(ownerEmail: string): Promise<void> {
           $setOnInsert: {
             incidentId: incident._id,
             title: evidenceTitle,
-            description: "Fictional alert details remain hidden until a commander reveals this training evidence.",
+            description:
+              "The simulated mail gateway flagged an unfamiliar OAuth app requesting email and profile access for a fictional account.",
             type: EvidenceType.ALERT,
             isRevealed: false,
           },
