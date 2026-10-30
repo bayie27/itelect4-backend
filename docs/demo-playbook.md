@@ -15,11 +15,11 @@ A fictional commander account has been created and tested on the deployed app:
 - **Role:** Incident commander
 - Use the one-off password provided to the presenter separately; it is intentionally not stored in this playbook.
 
-The rehearsal used the same database as the deployed app. Its incident is now terminal: the evidence is revealed, the proposal is rejected, the incident is resolved, and AI Review report version 1 is saved. The seed is idempotent and will not reset this record, so this account cannot replay the lifecycle walkthrough. Use a fresh commander and incident in a verified demo database to rehearse the full flow; do not point a seed command at a shared database without checking its target.
+The rehearsal used the same database as the deployed app. Its original incident is terminal: the evidence is revealed, the proposal is rejected, the incident is resolved, and AI Review report version 1 is saved. That report incorrectly describes revealed evidence as hidden, so do not present it as an accurate summary.
 
-The lifecycle controls and the AI prompt clarification are implemented locally in the two repositories but have not been deployed. Until deployment, the public app still has the earlier lifecycle UI. After deployment, a corrected AI report for this resolved incident would be saved as version 2; report versions are immutable.
+I prepared a separate fresh incident under the same Professor X account for the demo: **`[CIRS Demo] Suspicious OAuth consent alert`**. It is `DETECTED`, with one unrevealed evidence item and one `PROPOSED` action. Use this record for the lifecycle walkthrough. It has no report yet. During the demo, after resolving it, generate its first report version in AI Review. This keeps the earlier, inaccurate rehearsal report separate.
 
-**AI readiness:** AI Review requires a `RESOLVED` incident. The commander controls follow `DETECTED → TRIAGING → INVESTIGATING → CONTAINED → RESOLVED`; resolution stays disabled until every associated action is completed or rejected. For this demo slice, commanders can reject a proposed action. A real Gemini report was saved during rehearsal, but version 1 incorrectly says the evidence was hidden even though Atlas marks it revealed. The local prompt now explicitly marks supplied evidence as revealed; verify a new version after deployment before presenting its contents as accurate. This uses Gemini quota.
+**AI readiness:** Both production deployments are live. AI Review requires a `RESOLVED` incident. The commander controls follow `DETECTED → TRIAGING → INVESTIGATING → CONTAINED → RESOLVED`; resolution stays disabled until every associated action is completed or rejected. For this demo slice, commanders can reject a proposed action. The backend now marks supplied evidence as revealed and clarifies that pre-reveal wording does not describe its current state. I did not generate a report for the new incident during preparation. Its first live report request will use Gemini quota and can still encounter provider availability errors.
 
 The terminal `npm run try-ai` command uses the real Gemini service but prints a draft without saving an app report. It received a Gemini `503 UNAVAILABLE` response during rehearsal. Use it only if it succeeds during pre-demo preparation. Do not show a sample as a live AI result.
 
@@ -106,7 +106,7 @@ This sends a fixed fictional resolved OAuth scenario to Gemini and prints a stru
 
 ## UI map for the presenter
 
-After login, the header has **Dashboard**, **Evidence**, **Actions**, **AI Review**, and **Logout**. The dashboard lists incidents for the signed-in owner. Click **Open incident** to reach incident detail and expand **Show description**. In a fresh rehearsal, reveal the seeded evidence, reject the saved proposal on **Actions**, then use the incident page status controls to advance through the valid lifecycle. The existing Professor X incident is already resolved; use it only to inspect the current saved report and end state. The report page offers only incidents the server has resolved.
+After login, the header has **Dashboard**, **Evidence**, **Actions**, **AI Review**, and **Logout**. The dashboard lists incidents for the signed-in owner. Use the newest incident, **`[CIRS Demo] Suspicious OAuth consent alert`**, to reach incident detail and expand **Show description**. Reveal its evidence, reject its proposed action on **Actions**, then use the incident page status controls to advance through the valid lifecycle. The original Professor X incident is already resolved and has an inaccurate report; do not select it for the AI segment. The report page offers only incidents the server has resolved.
 
 This demo slice does not include action assignment, approval, or completion controls. The UI exposes rejection for proposed actions because that is enough to satisfy the resolution gate for this walkthrough. The backend remains authoritative for commander role, incident ownership, valid status changes, and the resolution gate.
 
@@ -132,25 +132,25 @@ On **Dashboard**, point out the incident title, severity, and status. Click **Op
 
 ### 2:00–2:30 — Review evidence
 
-Open **Evidence** and inspect the seeded fictional alert excerpt. Reveal it if this is a fresh scenario; the **Reveal evidence** button is already consumed for the Professor X rehearsal record.
+Open **Evidence** and inspect the **Mock OAuth consent alert excerpt** for the new demo incident. Click **Reveal evidence** to display its fictional facts.
 
 **Say:** “The commander revealed this item, and the server now returns its details. The API enforces the reveal permission; the interface alone is not the security boundary.”
 
 ### 2:30–3:15 — Reject the proposed action
 
-Open **Actions** and show the saved proposal, `Review training account consent activity`, with its `proposed` status. In a fresh scenario, click **Reject proposal**. The Professor X rehearsal proposal is already rejected, so do not expect another rejection on that account.
+Open **Actions** and show the new scenario's `Review training account consent activity` proposal with its `proposed` status. Click **Reject proposal**.
 
 **Say:** “A commander can reject a proposal that is no longer needed. This demo slice supports that transition; the other action workflow stages remain outside today’s walkthrough.”
 
 ### 3:15–4:00 — Advance the incident
 
-Return to incident detail. In a fresh scenario, click **Move to triaging**, **Move to investigating**, **Move to contained**, then **Move to resolved**. If an action is still open, the resolve control stays disabled and the page explains what needs to be done. The Professor X incident is already resolved and cannot replay these transitions.
+Return to the new incident detail. Click **Move to triaging**, **Move to investigating**, **Move to contained**, then **Move to resolved**. If an action is still open, the resolve control stays disabled and the page explains what needs to be done.
 
 **Say:** “The server accepts only valid lifecycle transitions. Resolution also checks that every response action is completed or rejected, and it records the resolution time.”
 
 ### 4:00–7:30 — AI Review (main feature)
 
-Open **AI Review**, select the resolved incident, and enter a fictional supplemental note of at least 20 characters, for example: `Focus on what the revealed evidence supports and what remains uncertain.` On a fresh scenario, click **Generate report**. Show the saved version and its executive summary, evidence reviewed, response timeline, lessons, recommendations, and data-coverage label. On the Professor X account, version 1 already exists and contains the evidence visibility error described above; do not present that text as an accurate summary. Generating a corrected report after deployment will create version 2.
+Open **AI Review** and select **`[CIRS Demo] Suspicious OAuth consent alert`**, not the original rehearsal incident. Enter a fictional supplemental note of at least 20 characters, for example: `Focus on the revealed evidence and distinguish supported facts from uncertainty.` Click **Generate report**. Show the newly saved version 1 and its executive summary, evidence reviewed, response timeline, lessons, recommendations, and data-coverage label.
 
 **Say:**
 
