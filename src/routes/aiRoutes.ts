@@ -75,6 +75,7 @@ aiRoutes.post("/", requireCommander, async (req, res) => {
       ...(incident.resolvedAt ? { resolvedAt: incident.resolvedAt.toISOString() } : {}),
     },
     evidence: evidence.map((item) => ({
+      isRevealed: true as const,
       title: item.title,
       description: item.description,
       type: item.type,
